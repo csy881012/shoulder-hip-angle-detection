@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shoulder and Hip Angle Detection</title>
+  <style>
+    canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 1;
+    }
+    video {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <video id="input_video" autoplay></video>
+  <canvas id="output_canvas" width="640" height="480"></canvas>
+
+  <!-- 引入 MediaPipe Pose -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+  <script>
+    const videoElement = document.getElementById('input_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+
+    // 初始化 Pose 模型
+    const pose = new Pose({
+      locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+      }
+    });
+
+    // 設定 Pose 模型參數
+    pose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      enableSegmentation: false,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    // 當收到 Pose 的偵測結果時，進行處理
+    pose.onResults(onResults);
+
+    // 啟動攝像頭
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await pose.send({ image: videoElement });
+      },
+      width: 1920,
+      height: 1080
+    });
+    camera.start();
+
+    function onResults(results) {
+      if (!results.poseLandmarks) {
+        return;
+      }
+
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(
+        results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      // 取得左肩、右肩和左髖、右髖的關節座標
+      const leftShoulder = results.poseLandmarks[11];  // 左肩
+      const rightShoulder = results.poseLandmarks[12]; // 右肩
+      const leftHip = results.poseLandmarks[23];       // 左髖
+      const rightHip = results.poseLandmarks[24];      // 右髖
+
+      // 繪製肩膀連線
+      canvasCtx.beginPath();
+      canvasCtx.moveTo(leftShoulder.x * canvasElement.width, leftShoulder.y * canvasElement.height);
+      canvasCtx.lineTo(rightShoulder.x * canvasElement.width, rightShoulder.y * canvasElement.height);
+      canvasCtx.strokeStyle = 'blue';
+      canvasCtx.lineWidth = 4;
+      canvasCtx.stroke();
+
+      // 繪製髖部連線
+      canvasCtx.beginPath();
+      canvasCtx.moveTo(leftHip.x * canvasElement.width, leftHip.y * canvasElement.height);
+      canvasCtx.lineTo(rightHip.x * canvasElement.width, rightHip.y * canvasElement.height);
+      canvasCtx.strokeStyle = 'green';
+      canvasCtx.lineWidth = 4;
+      canvasCtx.stroke();
+
+      // 計算雙肩連線對地角度
+      const shoulderGroundAngle = calculateGroundAngle(
+        leftShoulder.x, leftShoulder.y,
+        rightShoulder.x, rightShoulder.y
+      );
+
+      // 計算雙髖連線對地角度
+      const hipGroundAngle = calculateGroundAngle(
+        leftHip.x, leftHip.y,
+        rightHip.x, rightHip.y
+      );
+
+      // 在畫布上顯示角度
+      canvasCtx.font = "30px Arial";
+      canvasCtx.fillStyle = "red";
+      canvasCtx.fillText(`Shoulder to Ground Angle: ${shoulderGroundAngle.toFixed(2)}`, 10, 30);
+      canvasCtx.fillText(`Hip to Ground Angle: ${hipGroundAngle.toFixed(2)}`, 10, 60);
+
+      canvasCtx.restore();
+    }
+
+    // 計算兩點之間相對於水平線的夾角
+    function calculateGroundAngle(x1, y1, x2, y2) {
+      const deltaY = y2 - y1;
+      const deltaX = x2 - x1;
+      const radianAngle = Math.atan2(deltaY, deltaX);  // 計算與水平線的夾角
+      const degreeAngle = radianAngle * (180 / Math.PI); // 將弧度轉換為角度
+
+      return Math.abs(degreeAngle); // 返回絕對值，表示夾角
+    }
+
+  </script>
+
+</body>
+</html>
